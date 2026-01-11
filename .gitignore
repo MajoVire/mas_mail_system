@@ -1,0 +1,16 @@
+# Archivos de Python compilados (basura)
+__pycache__/
+*.pyc
+
+# Carpetas de entornos virtuales (si las tienes)
+venv/
+env/
+.env
+
+# Archivos de sistema
+.DS_Store
+
+# --- SECRETOS ---
+# Opción A: Si usas un archivo separado para claves
+secrets.py
+config.py
