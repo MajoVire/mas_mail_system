@@ -11,19 +11,18 @@ class DiskMonitorAgent(Agent):
         self.receiver_jid = receiver_jid
 
     class CheckDiskBehaviour(PeriodicBehaviour):
-        def on_start(self):
-            # Variable para recordar si ya enviamos la alerta
+        # --- CORRECCIÓN AQUÍ: Agregamos 'async' ---
+        async def on_start(self):
+            print("[Monitor] 🏁 Comportamiento de chequeo arrancando...")
             self.alert_sent = False 
 
         async def run(self):
-            # --- 1. VERIFICAR LIMPIEZA ---
+            # 1. VERIFICAR SI HAY ORDEN DE LIMPIEZA
             if common.cleaning_requested:
-                print("[Monitor] 🧹 Orden de limpieza recibida...")
+                print("[Monitor] 🧹 Limpiando disco...")
                 common.current_disk_usage = 45.00 
                 common.cleaning_requested = False
-                
-                # RESETEAMOS LA ALERTA: Al limpiar, permitimos que vuelva a avisar en el futuro
-                self.alert_sent = False 
+                self.alert_sent = False # Reseteamos la alarma
                 
                 if self.agent.receiver_jid:
                     msg = Message(to=self.agent.receiver_jid)
@@ -32,38 +31,39 @@ class DiskMonitorAgent(Agent):
                     await self.send(msg)
                 return 
 
-            # --- 2. MONITOREO ---
-            if common.current_disk_usage == 0.0:
+            # 2. SIMULACIÓN DE LLENADO DE DISCO
+            if common.current_disk_usage == 0.0 or common.current_disk_usage == 1.0:
+                # Primera lectura real
                 total, used, free = shutil.disk_usage("/")
                 common.current_disk_usage = round((used / total) * 100, 2)
             else:
+                # Simulación: sube poco a poco si es menor a 100
                 if common.current_disk_usage < 100:
                     common.current_disk_usage += 2.5
             
-            percent_used = common.current_disk_usage
-            common.current_disk_usage = round(percent_used, 2)
-            print(f"[Monitor] Uso: {percent_used:.2f}%")
+            percent_used = round(common.current_disk_usage, 2)
+            common.current_disk_usage = percent_used # Asegurar global
+            
+            print(f"[Monitor] Uso: {percent_used}%")
 
-            # --- 3. ALERTA INTELIGENTE (SOLO UNA VEZ) ---
+            # 3. ALERTA INTELIGENTE (Solo una vez)
             if percent_used >= 90.0:
-                # Solo entramos si NO hemos enviado la alerta todavía
                 if not self.alert_sent:
-                    print("[Monitor] ⚠️ ALERTA CRÍTICA: Enviando SMS...")
-                    
+                    print("[Monitor] ⚠️ UMBRAL CRÍTICO. Enviando aviso...")
                     if self.agent.receiver_jid:
                         msg = Message(to=self.agent.receiver_jid)
                         msg.set_metadata("performative", "inform")
-                        msg.body = f"ALERTA: Disco lleno al {percent_used:.2f}%. Limpieza requerida."
+                        msg.body = f"ALERTA: Disco lleno al {percent_used}%. Liberar espacio."
                         await self.send(msg)
                         
-                        # MARCAMOS QUE YA AVISAMOS
-                        self.alert_sent = True 
-                        print("[Monitor] ✉️ Alerta enviada (Se pausarán las alertas hasta limpiar).")
-                else:
-                    # Si ya avisamos, solo imprimimos en consola pero NO mandamos SMS
-                    print("[Monitor] ⚠️ Estado Crítico (Alerta ya enviada anteriormente).")
+                        self.alert_sent = True # ¡IMPORTANTE! Evita spam
+                        print("[Monitor] ✉️ Alerta enviada (Pausada hasta limpiar).")
 
     async def setup(self):
-        print("[Monitor] Agente iniciado.")
-        b = self.CheckDiskBehaviour(period=5)
+        print("[Monitor] 🟢 AGENTE INICIADO. Escaneando sistema...")
+        # Valor inicial visual para saber que cargó
+        common.current_disk_usage = 1.0 
+        
+        # Ejecutar cada 2 segundos para que veas el efecto rápido
+        b = self.CheckDiskBehaviour(period=2)
         self.add_behaviour(b)

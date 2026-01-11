@@ -78,7 +78,8 @@ HTML_TEMPLATE = """
 
     <script>
         function updateDashboard() {
-            fetch('/api/data')  // Pedimos solo los datos JSON
+            // Agregamos '?t=' + tiempo actual para que el navegador NO guarde caché
+            fetch('/api/data?t=' + new Date().getTime())
                 .then(response => response.json())
                 .then(data => {
                     // 1. ACTUALIZAR DISCO
