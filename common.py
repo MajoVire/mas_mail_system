@@ -4,9 +4,9 @@
 
 import collections
 
-system_logs = collections.deque(maxlen=20)
+# AUMENTAMOS el historial a 100 o 200 para que la paginación tenga sentido
+system_logs = collections.deque(maxlen=200) 
 current_disk_usage = 0.0
 
-# NUEVO: Órdenes desde la Web hacia los Agentes
-cleaning_requested = False   # Bandera para limpiar disco
-email_outbox = []            # Lista de espera para correos manuales
+cleaning_requested = False
+email_outbox = []
