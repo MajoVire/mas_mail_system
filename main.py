@@ -9,7 +9,7 @@ from agents.disk_monitor_agent import DiskMonitorAgent
 from agents.notification_agent import NotificationAgent
 from agents.receptor_agent import ReceptorAgent
 from agents.sender_agent import SenderAgent
-from agents.coordinator_agent import CoordinatorAgent # <--- NUEVO AGENTE
+from agents.coordinator_agent import CoordinatorAgent 
 
 # Importar servidor web
 from web.dashboard import start_web_server
@@ -36,7 +36,6 @@ async def main():
     sender_user   = config.SENDER_USER
     sender_pass   = config.SENDER_PASS
 
-    # Asegúrate de tener esto en config.py, o usa una cuenta existente temporalmente
     coord_user    = config.COORDINATOR_USER 
     coord_pass    = config.COORDINATOR_PASS
     # -----------------------------------------------
@@ -48,7 +47,7 @@ async def main():
     notificador.verify_security = False
     await notificador.start()
     
-    # Agente 2: Coordinador (Auditoría central) - ¡NUEVO!
+    # Agente 2: Coordinador (Auditoría central)
     coordinador = CoordinatorAgent(coord_user, coord_pass)
     coordinador.verify_security = False
     await coordinador.start()
@@ -56,7 +55,12 @@ async def main():
     # Agente 3: Monitor de Disco (Infraestructura)
     monitor = DiskMonitorAgent(monitor_user, monitor_pass)
     monitor.verify_security = False
-    monitor.set_receiver(notif_user) # Le avisa al notificador si falla el disco
+    
+    # --- CORRECCIÓN AQUÍ ---
+    # Cambiado de .set_receiver a .set_notification_agent para coincidir con el agente
+    monitor.set_notification_agent(notif_user) 
+    # -----------------------
+    
     await monitor.start()
 
     # Agente 4: Receptor (Entrada de Correos)
@@ -87,7 +91,7 @@ async def main():
         await notificador.stop()
         await receptor.stop()
         await sender.stop()
-        await coordinador.stop() # <--- Apagar el nuevo agente
+        await coordinador.stop()
         print("--- Sistema Apagado Correctamente ---")
 
 if __name__ == "__main__":

@@ -1,12 +1,15 @@
 # common.py
-# Este archivo actúa como una "Base de Datos en Memoria" simple
-# para que los agentes escriban y la web lea.
-
 import collections
 
-# AUMENTAMOS el historial a 100 o 200 para que la paginación tenga sentido
-system_logs = collections.deque(maxlen=200) 
-current_disk_usage = 0.0
+# Lista de logs (Bitácora)
+system_logs = collections.deque(maxlen=200)
 
+# --- TRUCO CLAVE ---
+# Hacemos que log_buffer sea un "alias" de system_logs.
+# Así, no importa si el agente usa uno u otro, todo va al mismo sitio.
+log_buffer = system_logs 
+
+# Variables globales
+current_disk_usage = 0.0
 cleaning_requested = False
 email_outbox = []

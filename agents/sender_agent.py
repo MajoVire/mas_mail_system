@@ -1,77 +1,92 @@
 import time
-import asyncio
-import random
+import smtplib
+import os
+import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from spade.agent import Agent
 from spade.behaviour import PeriodicBehaviour
-from spade.message import Message
-
-# Importamos la memoria compartida para leer la "Bandeja de Salida" de la Web
 import common
+import config
 
 class SenderAgent(Agent):
-    def set_notification_agent(self, agent_jid):
-        """Define a quién avisar cuando se envía un correo (el Notificador)"""
-        self.notification_jid = agent_jid
+    def set_notification_agent(self, notification_jid):
+        self.notification_jid = notification_jid
 
-    class SimulateSendingBehaviour(PeriodicBehaviour):
+    class SendMailBehaviour(PeriodicBehaviour):
+        async def on_start(self):
+            print("[Sender] 📤 Agente de Envíos iniciado.")
+            
+            # CONFIGURACIÓN RUTA HISTORIAL (Dinámica)
+            agentes_dir = os.path.dirname(os.path.abspath(__file__))
+            proyecto_dir = os.path.dirname(agentes_dir)
+            self.storage_folder = os.path.join(proyecto_dir, "almacenamiento_servidor")
+            self.history_file = os.path.join(self.storage_folder, "historial_enviados.csv")
+            
+            if not os.path.exists(self.storage_folder):
+                os.makedirs(self.storage_folder)
+
+        def save_to_history(self, recipient, subject):
+            try:
+                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                clean_subj = str(subject).replace("|", "-").replace("\n", " ")
+                # Formato: FECHA | DESTINATARIO | ASUNTO
+                linea = f"{now}|{recipient}|{clean_subj}\n"
+                
+                with open(self.history_file, "a", encoding="utf-8") as f:
+                    f.write(linea)
+            except Exception as e:
+                print(f"[Sender] ❌ Error guardando historial: {e}")
+
         async def run(self):
-            destinatario = ""
-            asunto = ""
-            es_manual = False
-
-            # ----------------------------------------------------------------
-            # 1. REVISAR SI EL USUARIO ORDENÓ ENVIAR UN CORREO (Desde la Web)
-            # ----------------------------------------------------------------
-            if len(common.email_outbox) > 0:
-                print("[Enviador] 👨‍💻 Solicitud manual detectada en la Web.")
+            # Revisamos si hay correos pendientes en la bandeja de salida compartida
+            if common.email_outbox:
+                print(f"[Sender] 📬 Procesando {len(common.email_outbox)} correos pendientes...")
                 
-                # Sacamos el primer correo de la fila (FIFO)
+                # Tomamos uno y lo sacamos de la lista (pop)
                 email_data = common.email_outbox.pop(0)
-                
                 destinatario = email_data['to']
                 asunto = email_data['subj']
-                es_manual = True
-            
-            # ----------------------------------------------------------------
-            # 2. SI NO HAY ÓRDENES, SIMULAR TRÁFICO AUTOMÁTICO
-            # ----------------------------------------------------------------
-            else:
-                # Generamos un número aleatorio para no enviar spam todo el tiempo
-                # Solo el 30% de las veces que despierta enviará un correo automático
-                if random.random() > 0.7:
-                    destinatario = "cliente_automatico@empresa.com"
-                    asunto = f"Reporte automático #{random.randint(1000, 9999)}"
-                    es_manual = False
-                else:
-                    # El 70% de las veces no hace nada, para no saturar tu celular
-                    return 
+                cuerpo = "Este es un mensaje enviado automáticamente por el Agente Sender del Sistema Multiagente."
 
-            print(f"[Enviador] 📤 Procesando envío a: {destinatario}")
-            
-            # ----------------------------------------------------------------
-            # 3. VALIDACIÓN Y ENVÍO (Lógica de Negocio)
-            # ----------------------------------------------------------------
-            # Requisito de la Rúbrica: Validar destinatario
-            if "@" in destinatario and "." in destinatario:
-                # Simulamos el tiempo que tarda un servidor SMTP real
-                await asyncio.sleep(1) 
-                
-                # Preparamos el mensaje para el Notificador
-                if self.agent.notification_jid:
-                    msg = Message(to=self.agent.notification_jid)
-                    msg.set_metadata("performative", "inform")
-                    
-                    # Diferenciamos en el SMS si fue MANUAL (tuyo) o AUTO
-                    tipo = "MANUAL" if es_manual else "AUTO"
-                    msg.body = f"ENVIADO ({tipo}): A {destinatario} - {asunto}"
-                    
-                    await self.send(msg)
-                    print(f"[Enviador] ✅ Correo enviado. Notificación despachada ({tipo}).")
-            else:
-                print(f"[Enviador] ❌ Error: Dirección '{destinatario}' inválida. Se descarta.")
+                try:
+                    # 1. CONEXIÓN SMTP (GMAIL)
+                    msg = MIMEMultipart()
+                    msg['From'] = config.EMAIL_USER
+                    msg['To'] = destinatario
+                    msg['Subject'] = asunto
+                    msg.attach(MIMEText(cuerpo, 'plain'))
+
+                    server = smtplib.SMTP('smtp.gmail.com', 587)
+                    server.starttls()
+                    server.login(config.EMAIL_USER, config.EMAIL_PASS)
+                    text = msg.as_string()
+                    server.sendmail(config.EMAIL_USER, destinatario, text)
+                    server.quit()
+
+                    print(f"[Sender] ✅ Correo enviado a {destinatario}")
+
+                    # 2. GUARDAR EN HISTORIAL
+                    self.save_to_history(destinatario, asunto)
+
+                    # 3. ACTUALIZAR BITÁCORA WEB
+                    if hasattr(common, 'log_buffer'):
+                        common.log_buffer.append({
+                            "sender": "SenderAgent",
+                            "body": f"Correo enviado exitosamente a {destinatario}"
+                        })
+
+                except Exception as e:
+                    print(f"[Sender] ❌ Error SMTP: {e}")
+                    # Si falla, podríamos devolverlo a la cola, pero por ahora solo logueamos
+                    if hasattr(common, 'log_buffer'):
+                        common.log_buffer.append({
+                            "sender": "SenderAgent",
+                            "body": f"FALLO envío a {destinatario}: {e}"
+                        })
 
     async def setup(self):
-        print("[Enviador] Agente de envíos listo. Esperando órdenes...")
-        # Revisa la cola de envíos cada 5 segundos
-        b = self.SimulateSendingBehaviour(period=5)
+        print("[Sender] 🟢 Agente de Salida ONLINE.")
+        # Revisa la cola cada 2 segundos
+        b = self.SendMailBehaviour(period=2)
         self.add_behaviour(b)
