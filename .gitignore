@@ -1,16 +1,25 @@
-# Archivos de Python compilados (basura)
+# --- BASURA DE PYTHON ---
 __pycache__/
 *.pyc
 
-# Carpetas de entornos virtuales (si las tienes)
+# --- ENTORNOS VIRTUALES ---
 venv/
 env/
 .env
+.venv/
 
-# Archivos de sistema
+# --- IDEs (Configuraciones de tu editor que no le sirven a otros) ---
+.vscode/
+.idea/
+
+# --- ARCHIVOS DE SISTEMA ---
 .DS_Store
 
-# --- SECRETOS ---
-# Opción A: Si usas un archivo separado para claves
+# --- DATOS GENERADOS (Importante) ---
+almacenamiento_servidor/
+*.log
+*.csv
+
+# --- SECRETOS (Seguridad) ---
 secrets.py
 config.py
