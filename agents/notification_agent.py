@@ -1,3 +1,4 @@
+# agents/notification_agent.py
 from spade.agent import Agent
 from spade.behaviour import CyclicBehaviour
 from twilio.rest import Client
@@ -5,49 +6,39 @@ import common
 import config
 
 class NotificationAgent(Agent):
-    # --- TUS CREDENCIALES DE TWILIO ---
-    TWILIO_SID = config.TWILIO_SID          # <--- Pega aquí tu Account SID
-    TWILIO_TOKEN = config.TWILIO_TOKEN          # <--- Pega aquí tu Auth Token
-    TWILIO_FROM = config.TWILIO_FROM         # <--- Pega aquí el número que te dio Twilio
-    
-    # --- TU CELULAR REAL (Donde recibirás el SMS) ---
-    # Nota: En cuentas de prueba (Trial), SOLO puedes enviar SMS 
-    # al número con el que te registraste en Twilio.
-    MY_CELLPHONE = config.MY_CELLPHONE # <--- Tu número (Ej: +593998877665)
-    # ------------------------------------------------
-
     class RecvMsgBehaviour(CyclicBehaviour):
         async def run(self):
+            # Esperamos mensaje
             msg = await self.receive(timeout=1)
             
             if msg:
-                # 1. Registro en Consola y Web
-                print(f"[🔔 Notificador] Mensaje de: {msg.sender}")
-                log_entry = {
-                    "sender": str(msg.sender).split("@")[0],
-                    "body": msg.body,
-                    "time": "Ahora"
-                }
-                common.system_logs.appendleft(log_entry)
+                # 1. Limpieza de datos
+                sender_name = str(msg.sender).split("@")[0]
+                cuerpo = msg.body
+                print(f"[🔔 Notificador] Recibido de {sender_name}: {cuerpo}")
 
-                # 2. ENVIAR SMS REAL A TU CELULAR
+                # 2. ACTUALIZAR DASHBOARD (Claves correctas: sender y body)
+                entry = {
+                    "sender": "Notificador",
+                    "body": f"SMS ENVIADO A {config.MY_CELLPHONE}: {cuerpo}"
+                }
+                
+                if hasattr(common, 'log_buffer'):
+                    common.log_buffer.append(entry)
+
+                # 3. ENVIAR SMS REAL (TWILIO)
                 try:
-                    # Verificamos que no hayas dejado los datos vacíos
-                    if "AC" in self.agent.TWILIO_SID: 
-                        client = Client(self.agent.TWILIO_SID, self.agent.TWILIO_TOKEN)
-                        
-                        message = client.messages.create(
-                            body=f"🤖 {str(msg.sender).split('@')[0]}: {msg.body}",
-                            from_=self.agent.TWILIO_FROM,
-                            to=self.agent.MY_CELLPHONE
-                        )
-                        print(f"[Twilio] ✅ SMS enviado exitosamente! SID: {message.sid}")
-                    else:
-                        print("[Twilio] ⚠️ Faltan credenciales, modo simulación.")
+                    client = Client(config.TWILIO_SID, config.TWILIO_TOKEN)
+                    message = client.messages.create(
+                        body=f"🤖 ALERTA: {cuerpo}",
+                        from_=config.TWILIO_FROM,
+                        to=config.MY_CELLPHONE
+                    )
+                    print(f"[Twilio] ✅ SMS Enviado! SID: {message.sid}")
                 except Exception as e:
-                    print(f"[Twilio] ❌ Error enviando SMS: {e}")
+                    print(f"[Twilio] ❌ Error: {e}")
 
     async def setup(self):
-        print("[Notificador] Servicio SMS activo y conectado a Twilio.")
+        print("[Notificador] 🟢 Listo y esperando alertas...")
         b = self.RecvMsgBehaviour()
         self.add_behaviour(b)
