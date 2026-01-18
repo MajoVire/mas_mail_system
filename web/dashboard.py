@@ -3,6 +3,7 @@ import common
 import math
 import os
 import simulation 
+import time
 
 app = Flask(__name__)
 
@@ -353,7 +354,13 @@ def send_email():
 
 @app.route("/simulate", methods=['POST'])
 def simulate():
+    start_ui = time.time()
+    # Lanzamos el trabajo pesado en hilo (Background)
     simulation.run_mass_simulation()
+    end_ui = time.time()
+    ui_latency_ms = (end_ui - start_ui) * 1000
+    # EVIDENCIA PROGRAMABLE
+    print(f"[HCI Metrica] UI liberada en {ui_latency_ms:.2f} ms (Estándar de oro: < 100ms)")
     return redirect(url_for('index'))
 
 def start_web_server():
