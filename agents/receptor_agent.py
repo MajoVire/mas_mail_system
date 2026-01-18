@@ -3,13 +3,14 @@ import os
 import imaplib
 import email
 import re
-import datetime # <--- Nuevo
+import datetime
 from email.header import decode_header
 from spade.agent import Agent
 from spade.behaviour import PeriodicBehaviour
 from spade.message import Message
 import common
 import config 
+import utils  # <--- 1. IMPORTAMOS EL NUEVO MÓDULO
 
 class ReceptorAgent(Agent):
     def set_notification_agent(self, notification_jid):
@@ -17,42 +18,29 @@ class ReceptorAgent(Agent):
 
     class CheckEmailBehaviour(PeriodicBehaviour):
         async def on_start(self):
-            print("[Receptor] 📧 Iniciando vigilancia IMAP...")
-            self.imap_server = "imap.gmail.com" 
-            self.email_user = config.EMAIL_USER 
-            self.email_pass = config.EMAIL_PASS
-            
-            # RUTA DINÁMICA
+            print("[Receptor] 📧 Vigilancia IMAP iniciada.")
             agentes_dir = os.path.dirname(os.path.abspath(__file__))
             proyecto_dir = os.path.dirname(agentes_dir)
             self.storage_folder = os.path.join(proyecto_dir, "almacenamiento_servidor")
-            self.history_file = os.path.join(self.storage_folder, "historial_correos.csv") # <--- Archivo Historial
-            
+            self.history_file = os.path.join(self.storage_folder, "historial_correos.csv")
             if not os.path.exists(self.storage_folder):
                 os.makedirs(self.storage_folder)
 
-        # Función para guardar en el historial
         def save_to_history(self, sender, subject):
+            # ... (Lógica de historial igual que antes) ...
             try:
-                # Obtenemos fecha bonita (Ej: 2026-01-15 10:30:00)
                 now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                # Limpiamos el asunto de posibles caracteres extraños
                 clean_subj = str(subject).replace("|", "-").replace("\n", " ")
-                
-                # Formato: FECHA | REMITENTE | ASUNTO
                 linea = f"{now}|{sender}|{clean_subj}\n"
-                
-                # "a" significa append (agregar al final sin borrar lo anterior)
                 with open(self.history_file, "a", encoding="utf-8") as f:
                     f.write(linea)
             except Exception as e:
-                print(f"[Receptor] ❌ Error guardando historial: {e}")
+                print(f"[Receptor] ❌ Error historial: {e}")
 
         async def run(self):
             try:
-                mail = imaplib.IMAP4_SSL(self.imap_server)
-                mail.login(self.email_user, self.email_pass)
+                mail = imaplib.IMAP4_SSL("imap.gmail.com")
+                mail.login(config.EMAIL_USER, config.EMAIL_PASS)
                 mail.select("inbox")
 
                 status, messages = mail.search(None, "(UNSEEN)")
@@ -62,61 +50,61 @@ class ReceptorAgent(Agent):
                     mail.logout()
                     return
 
-                print(f"[Receptor] 📥 Se encontraron {len(email_ids)} correos nuevos.")
+                print(f"[Receptor] 📥 {len(email_ids)} correos nuevos detectados.")
 
                 for e_id in email_ids:
+                    # ... (Lógica de parsing de email igual que antes) ...
                     res, msg_data = mail.fetch(e_id, "(RFC822)")
                     for response_part in msg_data:
                         if isinstance(response_part, tuple):
                             msg = email.message_from_bytes(response_part[1])
-                            
                             subject_raw, encoding = decode_header(msg["Subject"])[0]
                             if isinstance(subject_raw, bytes):
                                 subject = subject_raw.decode(encoding if encoding else "utf-8")
-                            else:
-                                subject = subject_raw
-                            
+                            else: subject = subject_raw
                             sender = msg.get("From")
                             
-                            # Regex
                             email_regex = r'[\w\.-]+@[\w\.-]+'
                             match = re.search(email_regex, str(sender))
                             clean_sender = match.group(0) if match else "Desconocido"
 
-                            # 1. GUARDAR 100 MB (Para el Monitor de Disco)
-                            timestamp = int(time.time())
-                            filename = f"email_{timestamp}.txt"
-                            filepath = os.path.join(self.storage_folder, filename)
-                            with open(filepath, "wb") as f:
-                                f.write(b"A" * 100 * 1024 * 1024) 
+                            # --- 2. USAMOS LA NUEVA UTILIDAD AQUÍ ---
+                            # Esto reemplaza las 4-5 líneas de código repetido
+                            exito, nombre_archivo = utils.generar_carga_disco(self.storage_folder, "incoming_mail")
                             
-                            print(f"[Receptor] 💾 Guardado 50MB. Remitente: {clean_sender}")
+                            if exito:
+                                print(f"[Receptor] 💾 Archivo pesado generado: {nombre_archivo}")
+                            else:
+                                print(f"[Receptor] ⚠️ Error generando archivo: {nombre_archivo}")
 
-                            # 2. GUARDAR EN HISTORIAL (NUEVO)
                             self.save_to_history(clean_sender, subject)
 
-                            # 3. Log Web
-                            log_msg = f"URGENTE: Recibido correo de {clean_sender}. Asunto: {subject}"
-                            if hasattr(common, 'log_buffer'):
-                                common.log_buffer.append({
-                                    "sender": "receptor_majo", 
-                                    "body": log_msg
-                                })
+                            log_msg = f"Recibido correo de {clean_sender}: {subject}"
+                            common.log_buffer.append({
+                                "sender": "ReceptorAgent",
+                                "body": log_msg
+                            })
 
-                            # 4. Notificador (Plyer/Windows)
                             if hasattr(self.agent, 'notification_jid'):
-                                msg = Message(to=self.agent.notification_jid)
-                                msg.set_metadata("performative", "inform")
-                                msg.body = f"Nuevo correo de {clean_sender}: {subject}"
-                                await self.send(msg)
+                                msg_spade = Message(to=self.agent.notification_jid)
+                                msg_spade.set_metadata("performative", "inform")
+                                msg_spade.body = log_msg
+                                await self.send(msg_spade)
 
                 mail.close()
                 mail.logout()
 
             except Exception as e:
-                print(f"[Receptor] ⚠️ Error conexión: {e}")
+                common.log_buffer.append({
+                    "sender": "ReceptorAgent",
+                    "body": f"⚠️ Error IMAP: {e}"
+                })
 
     async def setup(self):
-        print("[Receptor] 🟢 Agente ONLINE (Con Historial).")
-        b = self.CheckEmailBehaviour(period=5)
+        print("[Receptor] 🟢 Agente ONLINE.")
+        common.log_buffer.append({
+            "sender": "ReceptorAgent",
+            "body": "🟢 Vigilancia de correos iniciada."
+        })
+        b = self.CheckEmailBehaviour(period=10)
         self.add_behaviour(b)
