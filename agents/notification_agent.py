@@ -42,7 +42,7 @@ class NotificationAgent(Agent):
         print("[Notificador] 🟢 Listo y esperando alertas...")
         common.log_buffer.append({
             "sender": "Notificador",
-            "body": "🟢 Servicio de alertas SMS conectado a Twilio."
+            "body": "🟢 Agente Iniciado."
         })
         b = self.RecvMsgBehaviour()
         self.add_behaviour(b)

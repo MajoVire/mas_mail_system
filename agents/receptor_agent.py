@@ -11,6 +11,7 @@ from spade.message import Message
 import common
 import config 
 import utils 
+import utils 
 
 class ReceptorAgent(Agent):
     def set_notification_agent(self, notification_jid):
@@ -38,30 +39,36 @@ class ReceptorAgent(Agent):
 
         async def run(self):
             try:
+                # 1. Conexión IMAP
                 mail = imaplib.IMAP4_SSL("imap.gmail.com")
                 mail.login(config.EMAIL_USER, config.EMAIL_PASS)
                 mail.select("inbox")
 
+                # 2. Buscar correos no leídos
                 status, messages = mail.search(None, "(UNSEEN)")
                 email_ids = messages[0].split()
 
                 if not email_ids:
                     mail.logout()
-                    return
+                    return # Si no hay nada, terminamos este ciclo
 
                 print(f"[Receptor] 📥 {len(email_ids)} correos nuevos detectados.")
 
+                # 3. Procesar cada correo encontrado
                 for e_id in email_ids:
                     res, msg_data = mail.fetch(e_id, "(RFC822)")
                     for response_part in msg_data:
                         if isinstance(response_part, tuple):
                             msg = email.message_from_bytes(response_part[1])
+                            
+                            # Decodificar Asunto
                             subject_raw, encoding = decode_header(msg["Subject"])[0]
                             if isinstance(subject_raw, bytes):
                                 subject = subject_raw.decode(encoding if encoding else "utf-8")
                             else: subject = subject_raw
-                            sender = msg.get("From")
                             
+                            # Decodificar Remitente
+                            sender = msg.get("From")
                             email_regex = r'[\w\.-]+@[\w\.-]+'
                             match = re.search(email_regex, str(sender))
                             clean_sender = match.group(0) if match else "Desconocido"
@@ -72,6 +79,7 @@ class ReceptorAgent(Agent):
 
                             self.save_to_history(clean_sender, subject)
 
+                            # Mensaje para logs y alertas
                             log_msg = f"Recibido correo de {clean_sender}: {subject}"
                             common.log_buffer.append({"sender": "ReceptorAgent", "body": log_msg})
 

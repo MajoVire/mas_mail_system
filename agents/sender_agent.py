@@ -74,12 +74,15 @@ class SenderAgent(Agent):
                     self.save_to_history(destinatario, asunto)
                     
                     log_msg = f"Correo enviado a {destinatario}"
+                    
+                    log_msg = f"Correo enviado a {destinatario}"
                     common.log_buffer.append({"sender": "SenderAgent", "body": log_msg})
 
                     # A. Notificación SMS
                     if hasattr(self.agent, 'notification_jid'):
                         msg_sms = Message(to=self.agent.notification_jid)
                         msg_sms.set_metadata("performative", "inform")
+                        msg_sms.body = log_msg
                         msg_sms.body = log_msg
                         await self.send(msg_sms)
 

@@ -7,8 +7,8 @@ import common
 ACCIONES = ["Solicitud", "Informe", "Reclamo", "Pregunta", "Urgente", "Justificativo"]
 TEMAS = ["Notas Finales", "Acceso a Laboratorio", "Horario de Clases", "Tesis de Grado", "Matrícula Extemporánea", "Falta de Asistencia", "Reserva Auditorio"]
 DESTINATARIOS_POSIBLES = [
-   "patodiego628@gmail.com",
-   "diegoprueba628@gmail.com"
+   "mariavirecar@gmail.com",
+   "majo.virecar@gmail.com"
 ]
 
 def user_bot_activity(user_id):
