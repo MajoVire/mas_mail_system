@@ -28,7 +28,6 @@ class SenderAgent(Agent):
             try:
                 now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 clean_subj = str(subject).replace("|", "-").replace("\n", " ")
-                # NO guardamos el cuerpo en CSV para no romper el formato
                 linea = f"{now}|{recipient}|{clean_subj}\n"
                 with open(self.history_file, "a", encoding="utf-8") as f:
                     f.write(linea)
@@ -40,31 +39,26 @@ class SenderAgent(Agent):
                 # 1. Sacamos el paquete
                 email_data = common.email_outbox.pop(0)
                 
-                # Detectar simulación
+                # --- LÓGICA MÉTRICAS (Simulación) ---
                 es_simulacion = 'timestamp_in' in email_data
                 t_salida = time.time()
-
                 if es_simulacion:
                     ts_in = email_data['timestamp_in']
                     latencia = t_salida - ts_in
                     common.metrics_results["latencies"].append(latencia)
                     common.metrics_results["total_processed"] += 1
+                # ------------------------------------
 
-                destinatario = email_data['to']
-                asunto = email_data['subj']
-                
-                # --- NUEVO: OBTENER CUERPO O USAR DEFAULT ---
-                cuerpo_mensaje = email_data.get('body')
-                if not cuerpo_mensaje:
-                    cuerpo_mensaje = "Mensaje automático del sistema MAS (Sin contenido específico)."
+                destinatario = email_data.get('to') or email_data.get('destinatario')
+                asunto = email_data.get('subj') or email_data.get('asunto')
+                cuerpo_mensaje = email_data.get('body', "Mensaje automático del sistema MAS.")
 
                 try:
-                    # 2. ENVÍO REAL CON CONTENIDO DINÁMICO
+                    # 2. ENVÍO REAL SMTP
                     msg = MIMEMultipart()
                     msg['From'] = config.EMAIL_USER
                     msg['To'] = destinatario
                     msg['Subject'] = asunto
-                    # Aquí insertamos el texto real que vino del Dashboard/Simulación
                     msg.attach(MIMEText(cuerpo_mensaje, 'plain'))
 
                     server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -75,25 +69,30 @@ class SenderAgent(Agent):
 
                     print(f"[Sender] ✅ Enviado a {destinatario}")
                     
-                    # Generar carga de disco (10MB) - LÓGICA CONSERVADA
-                    exito, nombre = utils.generar_carga_disco(self.storage_folder, "sent_mail")
-                    if exito: print(f"[Sender] 💾 Log generado: {nombre}")
-
+                    # Carga de disco simulada
+                    utils.generar_carga_disco(self.storage_folder, "sent_mail")
                     self.save_to_history(destinatario, asunto)
                     
-                    common.log_buffer.append({
-                        "sender": "SenderAgent",
-                        "body": f"Correo enviado a {destinatario}"
-                    })
+                    log_msg = f"Correo enviado a {destinatario}"
+                    common.log_buffer.append({"sender": "SenderAgent", "body": log_msg})
 
-                    # Notificación SMS - LÓGICA CONSERVADA
+                    # A. Notificación SMS
                     if hasattr(self.agent, 'notification_jid'):
                         msg_sms = Message(to=self.agent.notification_jid)
                         msg_sms.set_metadata("performative", "inform")
-                        msg_sms.body = f"Correo enviado a {destinatario}"
+                        msg_sms.body = log_msg
                         await self.send(msg_sms)
 
-                    # 3. CÁLCULO DE MÉTRICAS (SOLO SI ES SIMULACIÓN) - LÓGICA CONSERVADA
+                    # B. [NUEVO] Reporte al Auditor
+                    try:
+                        if hasattr(config, 'COORDINATOR_USER'):
+                            msg_audit = Message(to=config.COORDINATOR_USER)
+                            msg_audit.set_metadata("performative", "inform")
+                            msg_audit.body = f"Transacción SMTP exitosa: {destinatario}"
+                            await self.send(msg_audit)
+                    except: pass
+
+                    # --- LÓGICA CÁLCULO THROUGHPUT (Se mantiene) ---
                     if es_simulacion and not common.email_outbox and common.metrics_results["total_processed"] > 0:
                          start_time = common.metrics_results.get("batch_start_time")
                          if start_time is not None:
@@ -105,13 +104,19 @@ class SenderAgent(Agent):
                              if common.metrics_results["latencies"]:
                                  avg_lat = sum(common.metrics_results["latencies"]) / len(common.metrics_results["latencies"])
                              else: avg_lat = 0.0
+                             
                              common.metrics_results["last_throughput"] = throughput
                              common.metrics_results["avg_latency"] = avg_lat
-                             common.metrics_results["is_compliant"] = (throughput >= 0.83)
-                             common.log_buffer.append({
-                                 "sender": "Analista",
-                                 "body": f"📊 Lote finalizado. Throughput: {throughput:.2f} msj/min."
-                             })
+                             common.metrics_results["is_compliant"] = (throughput >= 0.83) # >50 msj/h
+                             
+                             # Avisar resultado al auditor también
+                             msg_final = f"📊 Lote finalizado. Throughput: {throughput:.2f} msj/min."
+                             common.log_buffer.append({"sender": "Analista", "body": msg_final})
+                             try:
+                                 msg_audit = Message(to=config.COORDINATOR_USER)
+                                 msg_audit.body = msg_final
+                                 await self.send(msg_audit)
+                             except: pass
 
                 except Exception as e:
                     error_msg = f"❌ Error SMTP: {e}"
@@ -121,5 +126,13 @@ class SenderAgent(Agent):
     async def setup(self):
         print("[Sender] 🟢 Agente de Salida ONLINE.")
         common.log_buffer.append({"sender": "SenderAgent", "body": "🟢 Listo para enviar."})
+        
+        # Reporte inicio
+        try:
+            msg = Message(to=config.COORDINATOR_USER)
+            msg.body = "🟢 Agente Sender SMTP Iniciado."
+            await self.send(msg)
+        except: pass
+
         b = self.SendMailBehaviour(period=2)
         self.add_behaviour(b)

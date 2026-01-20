@@ -10,7 +10,7 @@ from spade.behaviour import PeriodicBehaviour
 from spade.message import Message
 import common
 import config 
-import utils  # <--- 1. IMPORTAMOS EL NUEVO MÓDULO
+import utils 
 
 class ReceptorAgent(Agent):
     def set_notification_agent(self, notification_jid):
@@ -27,7 +27,6 @@ class ReceptorAgent(Agent):
                 os.makedirs(self.storage_folder)
 
         def save_to_history(self, sender, subject):
-            # ... (Lógica de historial igual que antes) ...
             try:
                 now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 clean_subj = str(subject).replace("|", "-").replace("\n", " ")
@@ -53,7 +52,6 @@ class ReceptorAgent(Agent):
                 print(f"[Receptor] 📥 {len(email_ids)} correos nuevos detectados.")
 
                 for e_id in email_ids:
-                    # ... (Lógica de parsing de email igual que antes) ...
                     res, msg_data = mail.fetch(e_id, "(RFC822)")
                     for response_part in msg_data:
                         if isinstance(response_part, tuple):
@@ -68,43 +66,47 @@ class ReceptorAgent(Agent):
                             match = re.search(email_regex, str(sender))
                             clean_sender = match.group(0) if match else "Desconocido"
 
-                            # --- 2. USAMOS LA NUEVA UTILIDAD AQUÍ ---
-                            # Esto reemplaza las 4-5 líneas de código repetido
+                            # 1. Simulación de carga (Funcionalidad Original)
                             exito, nombre_archivo = utils.generar_carga_disco(self.storage_folder, "incoming_mail")
-                            
-                            if exito:
-                                print(f"[Receptor] 💾 Archivo pesado generado: {nombre_archivo}")
-                            else:
-                                print(f"[Receptor] ⚠️ Error generando archivo: {nombre_archivo}")
+                            if exito: print(f"[Receptor] 💾 Archivo generado: {nombre_archivo}")
 
                             self.save_to_history(clean_sender, subject)
 
                             log_msg = f"Recibido correo de {clean_sender}: {subject}"
-                            common.log_buffer.append({
-                                "sender": "ReceptorAgent",
-                                "body": log_msg
-                            })
+                            common.log_buffer.append({"sender": "ReceptorAgent", "body": log_msg})
 
+                            # 2. Notificación SMS (Original)
                             if hasattr(self.agent, 'notification_jid'):
                                 msg_spade = Message(to=self.agent.notification_jid)
                                 msg_spade.set_metadata("performative", "inform")
                                 msg_spade.body = log_msg
                                 await self.send(msg_spade)
+                            
+                            # 3. [NUEVO] Reporte al Auditor
+                            try:
+                                if hasattr(config, 'COORDINATOR_USER'):
+                                    msg_audit = Message(to=config.COORDINATOR_USER)
+                                    msg_audit.set_metadata("performative", "inform")
+                                    msg_audit.body = log_msg
+                                    await self.send(msg_audit)
+                            except: pass
 
                 mail.close()
                 mail.logout()
 
             except Exception as e:
-                common.log_buffer.append({
-                    "sender": "ReceptorAgent",
-                    "body": f"⚠️ Error IMAP: {e}"
-                })
+                common.log_buffer.append({"sender": "ReceptorAgent", "body": f"⚠️ Error IMAP: {e}"})
 
     async def setup(self):
         print("[Receptor] 🟢 Agente ONLINE.")
-        common.log_buffer.append({
-            "sender": "ReceptorAgent",
-            "body": "🟢 Vigilancia de correos iniciada."
-        })
+        common.log_buffer.append({"sender": "ReceptorAgent", "body": "🟢 Vigilancia iniciada."})
+        
+        # Reporte inicio
+        try:
+            msg = Message(to=config.COORDINATOR_USER)
+            msg.body = "🟢 Agente Receptor IMAP Iniciado."
+            await self.send(msg)
+        except: pass
+
         b = self.CheckEmailBehaviour(period=10)
         self.add_behaviour(b)
